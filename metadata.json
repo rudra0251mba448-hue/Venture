@@ -1,0 +1,6 @@
+{
+  "name": "AutoNest",
+  "description": "Curated automotive lifestyle store offering affordable, stylish, and verified-fitment car accessories, interior upgrades, detailing products, and collectibles across India.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
