@@ -1,0 +1,116 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidVehicle(v) {
+      return v is string && v.size() >= 3 && v.size() <= 32 &&
+        v in ['all', 'swift-baleno', 'nexon-punch', 'creta-i20', 'thar-suv', 'city-sedan'];
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'preferredVehicle', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'preferredVehicle', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == userId && data.uid == request.auth.uid && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500))
+        && isValidVehicle(data.preferredVehicle)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidOrder(data, userId) {
+      return data.keys().hasAll([
+          'orderNumber', 'userId', 'customerName', 'phone', 'city',
+          'address', 'pincode', 'paymentMethod', 'status',
+          'itemCount', 'itemsSummary', 'subtotal', 'shipping', 'total', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'orderNumber', 'userId', 'customerName', 'phone', 'city',
+          'address', 'pincode', 'carModel', 'paymentMethod', 'status',
+          'itemCount', 'itemsSummary', 'subtotal', 'shipping', 'total', 'createdAt'
+        ])
+        && data.orderNumber is string && data.orderNumber.size() >= 7 && data.orderNumber.size() <= 16
+        && data.orderNumber.matches('^AN-[0-9]{4,6}$')
+        && data.userId is string && data.userId == userId && data.userId == request.auth.uid && isValidId(data.userId)
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && data.phone is string && data.phone.size() >= 7 && data.phone.size() <= 24
+        && data.city is string && data.city.size() >= 1 && data.city.size() <= 80
+        && data.address is string && data.address.size() >= 3 && data.address.size() <= 300
+        && data.pincode is string && data.pincode.size() == 6 && data.pincode.matches('^[0-9]{6}$')
+        && (!('carModel' in data) || (data.carModel is string && data.carModel.size() <= 80))
+        && data.paymentMethod is string && data.paymentMethod in ['COD', 'UPI']
+        && data.status is string && data.status == 'confirmed'
+        && data.itemCount is int && data.itemCount >= 1 && data.itemCount <= 50
+        && data.itemsSummary is string && data.itemsSummary.size() >= 1 && data.itemsSummary.size() <= 1000
+        && data.subtotal is number && data.subtotal > 0 && data.subtotal <= 500000
+        && data.shipping is number && data.shipping >= 0 && data.shipping <= 5000
+        && data.total is number && data.total == data.subtotal + data.shipping
+        && data.createdAt == request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['preferredVehicle', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'preferredVehicle', 'updatedAt'])
+        );
+
+      allow delete: if false;
+
+      match /orders/{orderId} {
+        allow get: if isValidId(userId) && isValidId(orderId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && existing().userId == request.auth.uid;
+
+        allow create: if isValidId(userId)
+          && isValidId(orderId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && isValidOrder(incoming(), userId);
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}

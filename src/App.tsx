@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import {
   CATEGORIES,
   CategoryId,
@@ -9,12 +9,14 @@ import {
   VEHICLE_PROFILES,
   VehicleProfileId,
 } from './data/catalog';
+import { useAuth } from './context/AuthContext';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { ProductCard } from './components/ProductCard';
 import { ProductModal } from './components/ProductModal';
 import { BundlesAndProof } from './components/BundlesAndProof';
 import { CartDrawer, CartItem } from './components/CartDrawer';
+import { AccountModal } from './components/AccountModal';
 import { Footer } from './components/Footer';
 
 type SortOrder = 'featured' | 'price-asc' | 'price-desc';
@@ -22,6 +24,8 @@ type SortOrder = 'featured' | 'price-asc' | 'price-desc';
 const CART_STORAGE_KEY = 'autonest_bag_v1';
 
 export default function App() {
+  const { user, preferredVehicle, savePreferredVehicle, authError, clearAuthError } = useAuth();
+
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [selectedVehicle, setSelectedVehicle] = useState<VehicleProfileId>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -29,6 +33,7 @@ export default function App() {
 
   const [inspectedProduct, setInspectedProduct] = useState<Product | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
 
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     try {
@@ -46,6 +51,19 @@ export default function App() {
       // Ignore storage quota issues
     }
   }, [cartItems]);
+
+  useEffect(() => {
+    if (user && preferredVehicle !== 'all') {
+      setSelectedVehicle(preferredVehicle);
+    }
+  }, [user, preferredVehicle]);
+
+  const handleSelectVehicle = (vehicle: VehicleProfileId) => {
+    setSelectedVehicle(vehicle);
+    if (user) {
+      void savePreferredVehicle(vehicle);
+    }
+  };
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -148,12 +166,35 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8F8F7] text-[#141517]">
-      <Header cartCount={totalBagCount} onOpenCart={() => setIsCartOpen(true)} />
+      <Header
+        cartCount={totalBagCount}
+        onOpenCart={() => setIsCartOpen(true)}
+        onOpenAccount={() => setIsAccountOpen(true)}
+      />
+
+      {authError && (
+        <div
+          role="alert"
+          className="bg-[#FBF6F0] border-b border-[#E7D4BE] px-4 sm:px-6 py-2.5 text-xs text-[#8C5A2B]"
+        >
+          <div className="max-w-[1200px] mx-auto flex items-center justify-between gap-4">
+            <span>{authError}</span>
+            <button
+              type="button"
+              onClick={clearAuthError}
+              aria-label="Dismiss sign-in notice"
+              className="p-1 hover:text-[#141517] cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1">
         <Hero
           selectedVehicle={selectedVehicle}
-          onSelectVehicle={setSelectedVehicle}
+          onSelectVehicle={handleSelectVehicle}
           onInspectProduct={handleInspectById}
         />
 
@@ -227,7 +268,7 @@ export default function App() {
             {selectedVehicle !== 'all' && (
               <button
                 type="button"
-                onClick={() => setSelectedVehicle('all')}
+                onClick={() => handleSelectVehicle('all')}
                 className="text-xs font-medium text-[#C23527] hover:underline underline-offset-4 cursor-pointer whitespace-nowrap"
               >
                 Reset vehicle filter
@@ -248,7 +289,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setSelectedCategory('all');
-                  setSelectedVehicle('all');
+                  handleSelectVehicle('all');
                   setSearchQuery('');
                 }}
                 className="px-5 py-2.5 bg-[#141517] text-white text-xs font-semibold rounded-lg hover:bg-[#C23527] transition-colors cursor-pointer"
@@ -279,7 +320,7 @@ export default function App() {
       <ProductModal
         product={inspectedProduct}
         selectedVehicle={selectedVehicle}
-        onSelectVehicle={setSelectedVehicle}
+        onSelectVehicle={handleSelectVehicle}
         onClose={() => setInspectedProduct(null)}
         onAddToBag={(product, variant) => {
           handleAddProduct(product, variant);
@@ -294,6 +335,13 @@ export default function App() {
         onUpdateQty={handleUpdateQty}
         onRemoveItem={handleRemoveItem}
         onClearCart={() => setCartItems([])}
+      />
+
+      <AccountModal
+        isOpen={isAccountOpen}
+        selectedVehicle={selectedVehicle}
+        onSelectVehicle={handleSelectVehicle}
+        onClose={() => setIsAccountOpen(false)}
       />
     </div>
   );

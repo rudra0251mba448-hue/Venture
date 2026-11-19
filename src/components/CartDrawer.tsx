@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Check, Copy, Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { ProductArtwork } from './ProductArtwork';
 
 export interface CartItem {
@@ -24,6 +25,7 @@ interface OrderReceipt {
   subtotal: number;
   shipping: number;
   total: number;
+  savedToAccount: boolean;
 }
 
 interface CartDrawerProps {
@@ -46,6 +48,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onRemoveItem,
   onClearCart,
 }) => {
+  const { user, signingIn, signInWithGoogle, saveOrder } = useAuth();
+
   const [step, setStep] = useState<'bag' | 'checkout' | 'confirmed'>('bag');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -56,6 +60,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'UPI'>('COD');
   const [notifyRestocks, setNotifyRestocks] = useState(true);
   const [formError, setFormError] = useState('');
+  const [placingOrder, setPlacingOrder] = useState(false);
   const [receipt, setReceipt] = useState<OrderReceipt | null>(null);
   const [copiedSummary, setCopiedSummary] = useState(false);
 
@@ -75,6 +80,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
   }, [isOpen, items.length, step]);
 
+  useEffect(() => {
+    if (user?.displayName && !fullName) {
+      setFullName(user.displayName);
+    }
+  }, [user, fullName]);
+
   if (!isOpen) return null;
 
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -82,8 +93,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const total = subtotal + shipping;
   const remainingForFree = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
 
-  const handlePlaceOrder = (e: React.FormEvent) => {
+  const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (placingOrder) return;
+
     if (!fullName.trim() || !phone.trim() || !city.trim() || !address.trim() || !pincode.trim()) {
       setFormError('Please complete all required delivery fields.');
       return;
@@ -93,29 +106,66 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       return;
     }
     setFormError('');
+    setPlacingOrder(true);
 
     const orderNum = `AN-${Math.floor(1000 + Math.random() * 9000)}`;
-    setReceipt({
-      orderNumber: orderNum,
-      customerName: fullName.trim(),
-      phone: phone.trim(),
-      city: city.trim(),
-      address: address.trim(),
-      pincode: pincode.trim(),
-      paymentMethod,
-      items: [...items],
-      subtotal,
-      shipping,
-      total,
-    });
-    onClearCart();
-    setStep('confirmed');
+    const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+    const itemsSummary = items
+      .map((item) => `${item.name} (${item.variant}) × ${item.quantity}`)
+      .join(', ')
+      .slice(0, 1000);
+
+    let savedToAccount = false;
+    try {
+      if (user) {
+        await saveOrder({
+          orderNumber: orderNum,
+          customerName: fullName.trim(),
+          phone: phone.trim(),
+          city: city.trim(),
+          address: address.trim(),
+          pincode: pincode.trim(),
+          carModel: carModel.trim() || undefined,
+          paymentMethod,
+          itemCount,
+          itemsSummary,
+          subtotal,
+          shipping,
+          total,
+        });
+        savedToAccount = true;
+      }
+
+      setReceipt({
+        orderNumber: orderNum,
+        customerName: fullName.trim(),
+        phone: phone.trim(),
+        city: city.trim(),
+        address: address.trim(),
+        pincode: pincode.trim(),
+        paymentMethod,
+        items: [...items],
+        subtotal,
+        shipping,
+        total,
+        savedToAccount,
+      });
+      onClearCart();
+      setStep('confirmed');
+    } catch {
+      setFormError('Unable to save your order right now. Please try again.');
+    } finally {
+      setPlacingOrder(false);
+    }
   };
 
   const handleCopySummary = () => {
     if (!receipt) return;
     const itemLines = receipt.items
-      .map((i) => `• ${i.name} (${i.variant}) × ${i.quantity} = ₹${(i.price * i.quantity).toLocaleString('en-IN')}`)
+      .map(
+        (i) =>
+          `• ${i.name} (${i.variant}) × ${i.quantity} = ₹${(i.price * i.quantity).toLocaleString('en-IN')}`
+      )
       .join('\n');
     const summaryText = `AutoNest Order ${receipt.orderNumber}\nName: ${receipt.customerName}\nPhone: ${receipt.phone}\nDelivery: ${receipt.address}, ${receipt.city} - ${receipt.pincode}\nPayment: ${receipt.paymentMethod === 'COD' ? 'Cash on Delivery' : 'UPI on Delivery'}\n\nItems:\n${itemLines}\n\nTotal: ₹${receipt.total.toLocaleString('en-IN')}`;
     navigator.clipboard?.writeText(summaryText);
@@ -265,6 +315,33 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
           {step === 'checkout' && (
             <form id="checkout-form" onSubmit={handlePlaceOrder} className="space-y-4">
+              {/* Google Sign-In Status or Quick Prompt */}
+              {user ? (
+                <div className="p-3.5 bg-[#F4F8F6] border border-[#C6DED1] rounded-lg text-xs">
+                  <p className="font-semibold text-[#141517]">
+                    Signed in as {user.displayName || user.email}
+                  </p>
+                  <p className="text-[#4A4D55] mt-0.5">
+                    Your order receipt will be saved automatically to your AutoNest account.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3.5 bg-[#F8F8F7] border border-[#E4E4E0] rounded-lg flex items-center justify-between gap-3">
+                  <div className="text-xs">
+                    <p className="font-semibold text-[#141517]">Have a Google account?</p>
+                    <p className="text-[#5A5D65]">Autofill your name &amp; save order history.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={signInWithGoogle}
+                    disabled={signingIn}
+                    className="px-3 py-2 bg-white border border-[#D4D4CE] rounded-lg text-xs font-semibold text-[#141517] hover:border-[#141517] whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    {signingIn ? 'Signing in...' : 'Sign in with Google'}
+                  </button>
+                </div>
+              )}
+
               <div className="p-3.5 bg-[#F8F8F7] border border-[#E4E4E0] rounded-lg flex items-center justify-between text-xs">
                 <span className="text-[#5A5D65]">
                   {items.reduce((acc, i) => acc + i.quantity, 0)} item(s) · Payable Total
@@ -428,6 +505,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   Thank you, {receipt.customerName}. Dispatch confirmation will be shared to{' '}
                   <span className="font-mono">{receipt.phone}</span> for delivery to {receipt.city} (
                   {receipt.pincode}).
+                  {receipt.savedToAccount ? ' Saved to your Google account order history.' : ''}
                 </p>
               </div>
 
@@ -534,9 +612,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <button
               type="submit"
               form="checkout-form"
-              className="flex-1 py-3 min-h-[44px] bg-[#C23527] text-white text-sm font-semibold rounded-lg hover:bg-[#A82C20] transition-colors cursor-pointer"
+              disabled={placingOrder}
+              className="flex-1 py-3 min-h-[44px] bg-[#C23527] text-white text-sm font-semibold rounded-lg hover:bg-[#A82C20] disabled:opacity-60 transition-colors cursor-pointer"
             >
-              Confirm Order · ₹{total.toLocaleString('en-IN')}
+              {placingOrder
+                ? 'Confirming Order...'
+                : `Confirm Order · ₹${total.toLocaleString('en-IN')}`}
             </button>
           </div>
         )}

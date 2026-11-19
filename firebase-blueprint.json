@@ -1,0 +1,146 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated AutoNest customer profile and saved garage vehicle preference.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "photoURL": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "preferredVehicle": {
+          "type": "string",
+          "enum": ["all", "swift-baleno", "nexon-punch", "creta-i20", "thar-suv", "city-sedan"],
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "email", "preferredVehicle", "createdAt", "updatedAt"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order placed on AutoNest via COD or UPI on Delivery.",
+      "type": "object",
+      "properties": {
+        "orderNumber": {
+          "type": "string",
+          "pattern": "^AN-[0-9]{4,6}$",
+          "maxLength": 16
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "customerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 24
+        },
+        "city": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "address": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 300
+        },
+        "pincode": {
+          "type": "string",
+          "pattern": "^[0-9]{6}$",
+          "maxLength": 6
+        },
+        "carModel": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["COD", "UPI"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["confirmed", "preparing", "dispatched"]
+        },
+        "itemCount": {
+          "type": "number"
+        },
+        "itemsSummary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "subtotal": {
+          "type": "number"
+        },
+        "shipping": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "orderNumber",
+        "userId",
+        "customerName",
+        "phone",
+        "city",
+        "address",
+        "pincode",
+        "paymentMethod",
+        "status",
+        "itemCount",
+        "itemsSummary",
+        "subtotal",
+        "shipping",
+        "total",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private customer profile containing PII (email) and saved vehicle fitment selection, readable and writable only by the authenticated owner."
+    },
+    "/users/{userId}/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Private customer order receipts owned by the signed-in user."
+    }
+  }
+}
